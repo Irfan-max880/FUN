@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
   <title>Spooky Runner</title>
   <style>
     body { margin:0; overflow:hidden; background:#000; }
@@ -12,8 +12,7 @@
 <body>
 <canvas id="gameCanvas" width="1100" height="520"></canvas>
 
-<audio id="bgMusic" loop>
-  <!-- Creepy, free ambient track -->
+<audio id="bgMusic" loop crossorigin="anonymous">
   <source src="https://cdn.pixabay.com/download/audio/2022/10/26/audio_ecf1ce7bb0.mp3?filename=halloween-harp-107530.mp3" type="audio/mpeg">
   Your browser doesn’t support the audio element.
 </audio>
@@ -38,31 +37,32 @@ const pumpkinImg = new Image(); pumpkinImg.src = PUMPKIN_IMG_SRC;
 let player = { x:100, y:CANVAS_H - 150, w:100, h:100, vy:0, jump:false };
 let gravity = 0.8;
 let score = 0, gameOver = false;
-let obstacles = [];
+let pumpkins = [];
 let coins = [];
 let ghost = { x:-200, y:CANVAS_H - 150, w:100, h:100, speed:0.2 };
-
 let chaseTimer = 0;
 let pumpkinTimer = 0;
+let musicStarted = false;
 
-/* ---------- MUSIC AUTOPLAY FIX ---------- */
+/* ---------- MUSIC ---------- */
 const bgMusic = document.getElementById('bgMusic');
-function startMusicOnce() {
-  bgMusic.play().catch(err => console.log('Music error:', err));
-  document.removeEventListener('keydown', startMusicOnce);
-  document.removeEventListener('click', startMusicOnce);
+function startMusic() {
+  if (!musicStarted) {
+    musicStarted = true;
+    bgMusic.play().catch(err => console.log('Music play blocked:', err));
+  }
 }
-document.addEventListener('keydown', startMusicOnce);
-document.addEventListener('click', startMusicOnce);
 
 /* ---------- INPUT ---------- */
 document.addEventListener('keydown', e => {
+  startMusic();
   if ((e.code=='Space'||e.code=='ArrowUp') && !player.jump && !gameOver) {
     player.vy = -15; player.jump = true;
   }
   if (e.code=='Enter' && gameOver) restartGame();
 });
 canvas.addEventListener('click', () => {
+  startMusic();
   if (!player.jump && !gameOver) {
     player.vy = -15; player.jump = true;
   }
@@ -77,14 +77,14 @@ function gameLoop() {
   if (bgImg.complete) ctx.drawImage(bgImg,0,0,CANVAS_W,CANVAS_H);
   else { ctx.fillStyle='#111'; ctx.fillRect(0,0,CANVAS_W,CANVAS_H); }
 
-  // Ghost wandering (and chasing when triggered)
+  // Ghost
   if (ghostImg.complete) ctx.drawImage(ghostImg, ghost.x, ghost.y, ghost.w, ghost.h);
   ghost.x += ghost.speed;
-  if (chaseTimer > 0) chaseTimer--; 
-  else {
-    ghost.speed = 0.2; // slow idle speed
+  if (chaseTimer > 0) {
+    chaseTimer--;
+    if (chaseTimer === 0) ghost.speed = 0.2; // back to slow
   }
-  if (ghost.x + ghost.w >= player.x) gameOver = true;
+  if (ghost.x + ghost.w >= player.x + 20) gameOver = true;
 
   // Player
   if (playerImg.complete) ctx.drawImage(playerImg, player.x, player.y, player.w, player.h);
@@ -93,22 +93,22 @@ function gameLoop() {
     player.y = CANVAS_H - player.h; player.jump = false;
   }
 
-  // Pumpkins as traps
+  // Pumpkins
   pumpkinTimer++;
-  if (pumpkinTimer > 120) { // create spaced pumpkins
+  if (pumpkinTimer > 120) { // spaced out
     let size = 60;
-    obstacles.push({ x:CANVAS_W, y:CANVAS_H - size, w:size, h:size });
+    pumpkins.push({ x:CANVAS_W, y:CANVAS_H - size, w:size, h:size });
     pumpkinTimer = 0;
   }
-  obstacles.forEach(o => {
+  pumpkins.forEach(o => {
     o.x -= 6;
     if (pumpkinImg.complete) ctx.drawImage(pumpkinImg, o.x, o.y, o.w, o.h);
-    if (collision(player, o)) {
-      chaseTimer = 180; // 3 seconds at ~60fps
-      ghost.speed = 4;  // ramp up speed
+    if (pumpkinCollision(player, o)) {
+      chaseTimer = 180; // 3 seconds
+      ghost.speed = 4;  // speed burst
     }
   });
-  obstacles = obstacles.filter(o => o.x + o.w > 0);
+  pumpkins = pumpkins.filter(o => o.x + o.w > 0);
 
   // Coins
   if (Math.random() < 0.01) coins.push({ x:CANVAS_W, y:CANVAS_H - 100, w:30, h:30 });
@@ -134,13 +134,23 @@ function gameLoop() {
   }
 }
 
+/* ---------- COLLISION ---------- */
 function collision(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x &&
          a.y < b.y + b.h && a.y + a.h > b.y;
 }
 
+function pumpkinCollision(player, pumpkin) {
+  return (
+    player.x < pumpkin.x + pumpkin.w &&
+    player.x + player.w > pumpkin.x &&
+    player.y + player.h > pumpkin.y + 20 // only if low enough
+  );
+}
+
+/* ---------- RESTART ---------- */
 function restartGame() {
-  score = 0; obstacles = []; coins = [];
+  score = 0; pumpkins = []; coins = [];
   ghost.x = -200; ghost.speed = 0.2; chaseTimer = 0;
   player.y = CANVAS_H - player.h; player.vy = 0; player.jump = false;
   gameOver = false; pumpkinTimer = 0;
