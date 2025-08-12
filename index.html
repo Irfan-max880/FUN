@@ -7,21 +7,27 @@
   <style>
     body {
       margin: 0;
-      background: black;
       overflow: hidden;
+      background: black;
     }
     canvas {
       display: block;
       margin: auto;
-      background: #000;
     }
   </style>
 </head>
 <body>
 <canvas id="gameCanvas" width="1100" height="520"></canvas>
+
+<audio id="bgMusic" loop autoplay>
+  <source src="https://www.fesliyanstudios.com/play-mp3/387" type="audio/mpeg"> <!-- Replace with your spooky mp3 link -->
+</audio>
+
 <script>
 /* ---------- CONFIG ---------- */
 const PLAYER_IMG_SRC = 'https://i.postimg.cc/jdn1KZYb/Screenshot-20250812-001657-removebg-preview.png';
+const GHOST_IMG_SRC = 'https://i.postimg.cc/Gt4yzqCJ/ghost.png'; // Replace with your ghost image link
+const BG_IMG_SRC = 'https://i.postimg.cc/K8H9rxFq/halloween-bg.jpg'; // Replace with scary background image link
 const CANVAS_W = 1100, CANVAS_H = 520;
 
 /* ---------- SETUP ---------- */
@@ -31,18 +37,19 @@ const ctx = canvas.getContext('2d');
 let playerImg = new Image();
 playerImg.src = PLAYER_IMG_SRC;
 
+let ghostImg = new Image();
+ghostImg.src = GHOST_IMG_SRC;
+
+let bgImg = new Image();
+bgImg.src = BG_IMG_SRC;
+
 let player = { x: 100, y: CANVAS_H - 150, w: 100, h: 100, vy: 0, jump: false };
 let gravity = 0.8;
 let score = 0;
 let gameOver = false;
 let obstacles = [];
 let coins = [];
-let ghost = { x: -150, y: CANVAS_H - 150, w: 100, h: 100 };
-
-let bgLayers = [];
-for (let i = 0; i < 3; i++) {
-  bgLayers.push({ x: 0, speed: (i+1)*0.3 });
-}
+let ghost = { x: -150, y: CANVAS_H - 150, w: 100, h: 100, speed: 1.2 }; // slower start
 
 /* ---------- INPUT ---------- */
 document.addEventListener('keydown', e => {
@@ -64,14 +71,20 @@ canvas.addEventListener('click', () => {
 function gameLoop() {
   ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
 
-  // Background
-  ctx.fillStyle = '#111';
-  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  // Draw background
+  if (bgImg.complete) {
+    ctx.drawImage(bgImg, 0, 0, CANVAS_W, CANVAS_H);
+  } else {
+    ctx.fillStyle = '#111';
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  }
 
   // Ghost chasing
-  ctx.fillStyle = 'white';
-  ctx.fillRect(ghost.x, ghost.y, ghost.w, ghost.h);
-  ghost.x += 1; // ghost moves towards player
+  if (ghostImg.complete) {
+    ctx.drawImage(ghostImg, ghost.x, ghost.y, ghost.w, ghost.h);
+  }
+  ghost.x += ghost.speed; // slow start
+  ghost.speed += 0.001; // gradually faster
   if (ghost.x + ghost.w >= player.x) {
     gameOver = true;
   }
@@ -79,9 +92,6 @@ function gameLoop() {
   // Player
   if (playerImg.complete) {
     ctx.drawImage(playerImg, player.x, player.y, player.w, player.h);
-  } else {
-    ctx.fillStyle = 'orange';
-    ctx.fillRect(player.x, player.y, player.w, player.h);
   }
   player.y += player.vy;
   player.vy += gravity;
@@ -147,6 +157,7 @@ function restartGame() {
   obstacles = [];
   coins = [];
   ghost.x = -150;
+  ghost.speed = 1.2;
   player.x = 100;
   player.y = CANVAS_H - 150;
   player.vy = 0;
