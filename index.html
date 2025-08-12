@@ -19,15 +19,16 @@
 <body>
 <canvas id="gameCanvas" width="1100" height="520"></canvas>
 
-<audio id="bgMusic" loop autoplay>
-  <source src="https://www.fesliyanstudios.com/play-mp3/387" type="audio/mpeg"> <!-- Replace with your spooky mp3 link -->
+<audio id="bgMusic" loop>
+  <source src="https://www.fesliyanstudios.com/play-mp3/387" type="audio/mpeg">
 </audio>
 
 <script>
 /* ---------- CONFIG ---------- */
 const PLAYER_IMG_SRC = 'https://i.postimg.cc/jdn1KZYb/Screenshot-20250812-001657-removebg-preview.png';
-const GHOST_IMG_SRC = 'https://i.postimg.cc/Gt4yzqCJ/ghost.png'; // Replace with your ghost image link
-const BG_IMG_SRC = 'https://i.postimg.cc/K8H9rxFq/halloween-bg.jpg'; // Replace with scary background image link
+const GHOST_IMG_SRC = 'https://i.postimg.cc/vDwc43PK/Screenshot-2025-0812-174643-removebg-preview.png';
+const BG_IMG_SRC = 'https://i.postimg.cc/L5tmbRTy/Screenshot-2025-0812-173844.png';
+const PUMPKIN_IMG_SRC = 'https://i.postimg.cc/9MjBChh7/pumpkin.png'; // Halloween obstacle
 const CANVAS_W = 1100, CANVAS_H = 520;
 
 /* ---------- SETUP ---------- */
@@ -43,13 +44,26 @@ ghostImg.src = GHOST_IMG_SRC;
 let bgImg = new Image();
 bgImg.src = BG_IMG_SRC;
 
+let pumpkinImg = new Image();
+pumpkinImg.src = PUMPKIN_IMG_SRC;
+
 let player = { x: 100, y: CANVAS_H - 150, w: 100, h: 100, vy: 0, jump: false };
 let gravity = 0.8;
 let score = 0;
 let gameOver = false;
 let obstacles = [];
 let coins = [];
-let ghost = { x: -150, y: CANVAS_H - 150, w: 100, h: 100, speed: 1.2 }; // slower start
+let ghost = { x: -150, y: CANVAS_H - 150, w: 100, h: 100, speed: 1.2 };
+
+/* ---------- MUSIC AUTOPLAY FIX ---------- */
+const bgMusic = document.getElementById('bgMusic');
+function startMusicOnce() {
+  bgMusic.play().catch(err => console.log('Music blocked:', err));
+  document.removeEventListener('keydown', startMusicOnce);
+  document.removeEventListener('click', startMusicOnce);
+}
+document.addEventListener('keydown', startMusicOnce);
+document.addEventListener('click', startMusicOnce);
 
 /* ---------- INPUT ---------- */
 document.addEventListener('keydown', e => {
@@ -71,7 +85,7 @@ canvas.addEventListener('click', () => {
 function gameLoop() {
   ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
 
-  // Draw background
+  // Background
   if (bgImg.complete) {
     ctx.drawImage(bgImg, 0, 0, CANVAS_W, CANVAS_H);
   } else {
@@ -79,12 +93,12 @@ function gameLoop() {
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
   }
 
-  // Ghost chasing
+  // Ghost
   if (ghostImg.complete) {
     ctx.drawImage(ghostImg, ghost.x, ghost.y, ghost.w, ghost.h);
   }
-  ghost.x += ghost.speed; // slow start
-  ghost.speed += 0.001; // gradually faster
+  ghost.x += ghost.speed;
+  ghost.speed += 0.001;
   if (ghost.x + ghost.w >= player.x) {
     gameOver = true;
   }
@@ -100,14 +114,16 @@ function gameLoop() {
     player.jump = false;
   }
 
-  // Obstacles
+  // Pumpkins as obstacles
   if (Math.random() < 0.02) {
-    obstacles.push({ x: CANVAS_W, y: CANVAS_H - 60, w: 50, h: 50 });
+    let size = 50 + Math.random() * 30;
+    obstacles.push({ x: CANVAS_W, y: CANVAS_H - size, w: size, h: size });
   }
-  ctx.fillStyle = 'red';
   obstacles.forEach(o => {
     o.x -= 6;
-    ctx.fillRect(o.x, o.y, o.w, o.h);
+    if (pumpkinImg.complete) {
+      ctx.drawImage(pumpkinImg, o.x, o.y, o.w, o.h);
+    }
     if (collision(player, o)) gameOver = true;
   });
   obstacles = obstacles.filter(o => o.x + o.w > 0);
