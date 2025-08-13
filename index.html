@@ -29,18 +29,17 @@ fogCanvas.width = canvas.width;
 fogCanvas.height = canvas.height;
 const fogCtx = fogCanvas.getContext("2d");
 
-// Fog pattern
+// Fog texture
 const fogImg = new Image();
 fogImg.src = "https://www.transparenttextures.com/patterns/foggy-birds.png";
-
 let fogX = 0;
 
 // Player
 let player = { x:100, y:400, w:80, h:100, vy:0, jumping:false };
 const gravity = 0.8;
 
-// Ghost starts far left
-let ghost = { x:-200, y:400, w:80, h:100, speed:0.3, chasing:false, chaseTimer:0 };
+// Ghost
+let ghost = { x:-200, y:400, w:120, h:140, speed:0, chasing:false, chaseTimer:0, startDelay:120 };
 
 // Pumpkins
 let pumpkins = [];
@@ -78,25 +77,23 @@ canvas.addEventListener("click", () => {
   if (gameOver) restartGame();
 });
 
-// Game loop
+// Main loop
 function loop() {
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  // Draw background
+  // Background
   if (bgImg.complete) ctx.drawImage(bgImg,0,0,canvas.width,canvas.height);
-
-  // Dark overlay
   ctx.fillStyle = "rgba(0,0,0,0.4)";
   ctx.fillRect(0,0,canvas.width,canvas.height);
 
-  // Pumpkins spawn
+  // Spawn pumpkins
   pumpkinTimer++;
   if (pumpkinTimer > 150) {
     pumpkins.push({ x:canvas.width, y:440, w:50, h:50, glow:0 });
     pumpkinTimer = 0;
   }
 
-  // Pumpkins draw
+  // Draw pumpkins
   pumpkins.forEach(p => {
     p.x -= 5;
     p.glow += 0.1;
@@ -106,7 +103,6 @@ function loop() {
     ctx.drawImage(pumpkinImg,p.x,p.y,p.w,p.h);
     ctx.restore();
 
-    // Pumpkin collision
     if (checkPumpkinCollision(player,p)) {
       ghost.chasing = true;
       ghost.speed = 3;
@@ -121,7 +117,13 @@ function loop() {
   if (player.y >= 400) { player.y = 400; player.jumping = false; }
 
   // Ghost movement
-  ghost.x += ghost.speed;
+  if (ghost.startDelay > 0) {
+    ghost.startDelay--;
+  } else {
+    if (!ghost.chasing) ghost.speed = 0.3;
+    ghost.x += ghost.speed;
+  }
+
   if (ghost.chasing) {
     ghost.chaseTimer--;
     if (ghost.chaseTimer <= 0) {
@@ -130,8 +132,14 @@ function loop() {
     }
   }
 
-  // Ghost catch check
-  if (ghost.x + ghost.w >= player.x + 20) gameOver = true;
+  // Ghost collision using smaller hitbox
+  let ghostHitbox = {
+    x: ghost.x + 20,
+    y: ghost.y + 10,
+    w: ghost.w - 40,
+    h: ghost.h - 20
+  };
+  if (rectsOverlap(player, ghostHitbox)) gameOver = true;
 
   // Draw ghost
   ctx.drawImage(ghostImg, ghost.x, ghost.y, ghost.w, ghost.h);
@@ -168,18 +176,24 @@ function loop() {
   }
 }
 
+// Collision helpers
 function checkPumpkinCollision(player,p) {
-  return player.x < p.x + p.w &&
-         player.x + player.w > p.x &&
-         player.y + player.h > p.y + 10 &&
-         player.y < p.y + p.h;
+  return rectsOverlap(player, p) && player.y + player.h > p.y + 20;
+}
+
+function rectsOverlap(a,b) {
+  return a.x < b.x + b.w &&
+         a.x + a.w > b.x &&
+         a.y < b.y + b.h &&
+         a.y + a.h > b.y;
 }
 
 function restartGame() {
   pumpkins = [];
   pumpkinTimer = 0;
   ghost.x = -200;
-  ghost.speed = 0.3;
+  ghost.speed = 0;
+  ghost.startDelay = 120;
   ghost.chasing = false;
   score = 0;
   gameOver = false;
