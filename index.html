@@ -39,8 +39,8 @@ let fogX = 0;
 let player = { x:100, y:400, w:80, h:100, vy:0, jumping:false };
 const gravity = 0.8;
 
-// Ghost
-let ghost = { x:50, y:400, w:80, h:100, speed:0.5, chasing:false, chaseTimer:0 };
+// Ghost starts far left
+let ghost = { x:-200, y:400, w:80, h:100, speed:0.3, chasing:false, chaseTimer:0 };
 
 // Pumpkins
 let pumpkins = [];
@@ -85,7 +85,7 @@ function loop() {
   // Draw background
   if (bgImg.complete) ctx.drawImage(bgImg,0,0,canvas.width,canvas.height);
 
-  // Dark overlay for spooky feel
+  // Dark overlay
   ctx.fillStyle = "rgba(0,0,0,0.4)";
   ctx.fillRect(0,0,canvas.width,canvas.height);
 
@@ -126,7 +126,7 @@ function loop() {
     ghost.chaseTimer--;
     if (ghost.chaseTimer <= 0) {
       ghost.chasing = false;
-      ghost.speed = 0.5;
+      ghost.speed = 0.3;
     }
   }
 
@@ -171,15 +171,15 @@ function loop() {
 function checkPumpkinCollision(player,p) {
   return player.x < p.x + p.w &&
          player.x + player.w > p.x &&
-         player.y + player.h > p.y + 10 && // Must be low enough to hit
+         player.y + player.h > p.y + 10 &&
          player.y < p.y + p.h;
 }
 
 function restartGame() {
   pumpkins = [];
   pumpkinTimer = 0;
-  ghost.x = 50;
-  ghost.speed = 0.5;
+  ghost.x = -200;
+  ghost.speed = 0.3;
   ghost.chasing = false;
   score = 0;
   gameOver = false;
