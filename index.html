@@ -1,256 +1,335 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Haunted Runner Final</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Shukku — Ghost Shooter</title>
 <style>
-  body { margin:0; background:black; overflow:hidden; }
-  canvas { display:block; margin:auto; background:black; }
+  :root{--bg:#000}
+  html,body{height:100%;margin:0;background:#000;font-family:system-ui,Arial}
+  canvas{display:block;margin:auto;background:#000}
+  #hud{position:fixed;left:16px;top:12px;color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.7);font-weight:700}
+  #hud .sub{font-weight:600;opacity:.9}
+  #overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;color:#fff;background:rgba(0,0,0,.55);gap:10px;visibility:hidden;z-index:10}
+  .btn{background:#ff4b4b;border:none;color:#fff;padding:10px 16px;border-radius:10px;font-weight:800;cursor:pointer}
+  #tip{position:fixed;right:16px;top:12px;color:#fff;opacity:.9;text-align:right}
 </style>
 </head>
 <body>
 <canvas id="game" width="1100" height="520"></canvas>
 
-<audio id="bgMusic" loop preload="auto" muted>
+<div id="hud">
+  <div id="score">Score: 0</div>
+  <div class="sub" id="kills">Ghosts banished: 0</div>
+</div>
+<div id="tip">Click or F to shoot • Space to hop</div>
+
+<div id="overlay">
+  <div style="font-size:34px;font-weight:900">Game Over</div>
+  <div id="finalScore" style="font-size:18px">Score: 0</div>
+  <button id="restart" class="btn">Restart</button>
+</div>
+
+<!-- Haunted ambience (starts after first input) -->
+<audio id="bgm" loop preload="auto" muted>
   <source src="https://cdn.pixabay.com/download/audio/2021/10/26/audio_9b2db5a5de.mp3?filename=haunted-house-ambience-1-minute-110057.mp3" type="audio/mpeg">
 </audio>
 
 <script>
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
+/* ====== Canvas + UI ====== */
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+const killsEl = document.getElementById('kills');
+const overlay = document.getElementById('overlay');
+const finalScoreEl = document.getElementById('finalScore');
+const restartBtn = document.getElementById('restart');
 
-// Images
-const playerImg = new Image(); playerImg.src = "https://i.postimg.cc/jdn1KZYb/Screenshot-20250812-001657-removebg-preview.png";
-const ghostImg  = new Image(); ghostImg.src  = "https://i.postimg.cc/vDwc43PK/Screenshot-2025-0812-174643-removebg-preview.png";
-const bgImg     = new Image(); bgImg.src     = "https://i.postimg.cc/L5tmbRTy/Screenshot-2025-0812-173844.png";
-const pumpkinImg= new Image(); pumpkinImg.src= "https://i.postimg.cc/FK6CkBSG/Screenshot-2025-0812-180233-removebg-preview.png";
-const fogImg    = new Image(); fogImg.crossOrigin = "anonymous";
-fogImg.src      = "https://i.ibb.co/dKnmp53/fog-texture.png";
+/* ====== Assets (your images) ====== */
+const bgImg      = new Image(); bgImg.crossOrigin='anonymous';
+bgImg.src        = "https://i.postimg.cc/L5tmbRTy/Screenshot-2025-0812-173844.png";
 
-// Player
-let player = { x:100, y:400, w:80, h:100, vy:0, jumping:false };
-const gravity = 0.8;
+const playerImg  = new Image(); playerImg.crossOrigin='anonymous';
+playerImg.src    = "https://i.postimg.cc/jdn1KZYb/Screenshot-20250812-001657-removebg-preview.png";
 
-// Ghost
-let ghost = {
-  x:-300, y:400, w:120, h:140,
-  baseSpeed:0.3,
-  speed:0.3,
-  chasing:false,
-  chaseTimer:0,
-  minDistance:250
-};
+const enemyImg   = new Image(); enemyImg.crossOrigin='anonymous';
+enemyImg.src     = "https://i.postimg.cc/vDwc43PK/Screenshot-2025-0812-174643-removebg-preview.png";
 
-// Pumpkins, bullets, particles
-let pumpkins = [];
-let bullets = [];
-let particles = [];
-let pumpkinTimer = 0;
+/* Fallbacks so black screens never happen */
+bgImg.onerror = () => console.warn("BG failed to load");
+playerImg.onerror = () => console.warn("Player failed to load");
+enemyImg.onerror = () => console.warn("Ghost failed to load");
 
-// Score, game state
+/* ====== Game State ====== */
+const GROUND_Y = 400;
+let running = true;
+let time = 0;
 let score = 0;
-let gameOver = false;
+let kills = 0;
 
-// Music
-const bgMusic = document.getElementById("bgMusic");
-let musicStarted = false;
-function startMusic() {
-  if (!musicStarted) {
-    bgMusic.muted = false;
-    bgMusic.volume = 0.5;
-    bgMusic.play().then(() => {
-      musicStarted = true;
-    }).catch(() => {});
+/* Player */
+const player = { x:100, y:GROUND_Y, w:80, h:100, vy:0, jumping:false };
+
+/* Enemies (front ghosts) */
+let enemies = [];    // {x,y,w,h,speed,hp,alpha,dy,sway}
+let spawnTimer = 0;
+let spawnEvery = 120; // frames
+
+/* Bullets */
+let bullets = [];    // {x,y,w,h,spd}
+let fireCooldown = 0;
+const FIRE_COOLDOWN_FRAMES = 10;
+
+/* Particles */
+let particles = [];  // small orange sparks
+
+/* Fog (procedural; no CORS) */
+let fogPuffs = [];   // {x,y,r,alpha,dx}
+function initFog(){
+  fogPuffs.length = 0;
+  for(let i=0;i<60;i++){
+    fogPuffs.push({
+      x: Math.random()*canvas.width,
+      y: Math.random()*canvas.height,
+      r: 80 + Math.random()*140,
+      alpha: 0.06 + Math.random()*0.12,
+      dx: -0.3 - Math.random()*0.4
+    });
   }
 }
 
-// Input
-document.addEventListener("keydown", e => {
-  startMusic();
-  if ((e.code === "Space" || e.code === "ArrowUp") && !player.jumping && !gameOver) {
-    player.vy = -15;
-    player.jumping = true;
+/* Music (autoplays after first input) */
+const bgm = document.getElementById('bgm');
+let musicOn = false;
+function tryStartMusic(){
+  if (!musicOn){
+    bgm.muted = false;
+    bgm.volume = 0.55;
+    bgm.play().then(()=>{ musicOn = true; })
+      .catch(()=>{/* will retry on next input */});
   }
-  if (e.code === "Enter" && gameOver) restartGame();
-  if (e.code === "KeyF" && !gameOver) shoot();
-});
-canvas.addEventListener("click", e => {
-  startMusic();
-  if (e.shiftKey) shoot();
-  else if (!player.jumping && !gameOver) {
-    player.vy = -15;
-    player.jumping = true;
-  }
-  if (gameOver) restartGame();
-});
-
-function shoot() {
-  bullets.push({ x: player.x + player.w, y: player.y + player.h/2 - 5, w:15, h:5, speed:8 });
 }
 
-function spawnParticles(x,y) {
-  for (let i=0; i<6; i++) {
+/* ====== Input ====== */
+function shoot(){
+  if (fireCooldown>0 || !running) return;
+  bullets.push({ x: player.x + player.w, y: player.y + player.h/2 - 3, w:16, h:6, spd:10 });
+  fireCooldown = FIRE_COOLDOWN_FRAMES;
+}
+
+document.addEventListener('keydown', e=>{
+  tryStartMusic();
+  if ((e.code==='Space'||e.code==='ArrowUp') && !player.jumping && running){
+    player.vy = -15; player.jumping = true;
+  }
+  if (e.code==='KeyF') shoot();
+  if (e.code==='Enter' && !running) restart();
+});
+canvas.addEventListener('click', e=>{
+  tryStartMusic();
+  if (running) shoot();
+  else restart();
+});
+
+/* ====== Helpers ====== */
+function rectOverlap(a,b){
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+function spawnEnemy(){
+  // Slow “zombie” ghost advancing from the right
+  const h = 110 + Math.random()*30;
+  enemies.push({
+    x: canvas.width + 10,
+    y: GROUND_Y + (Math.random()<0.2 ? -20 : 0), // mostly ground level
+    w: 90, h,
+    speed: 1.5 + Math.random()*0.6, // slow
+    hp: 2, alpha: 1,
+    dy: 0, sway: Math.random()*Math.PI*2
+  });
+}
+function explode(x,y,base=8){
+  for(let i=0;i<base;i++){
     particles.push({
       x, y,
-      vx: (Math.random()-0.5)*4,
-      vy: (Math.random()-1)*4,
-      life: 30
+      vx: (Math.random()-0.5)*3,
+      vy: (Math.random()-1.2)*3,
+      life: 28 + Math.random()*12
     });
   }
 }
 
-function loop() {
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+/* ====== Core Update/Draw ====== */
+function update(){
+  time++;
 
+  /* Score & cooldown */
+  score += 0.1;
+  if (fireCooldown>0) fireCooldown--;
+
+  /* Spawn enemies */
+  spawnTimer++;
+  if (spawnTimer >= spawnEvery){
+    spawnTimer = 0;
+    // keep them spaced
+    if (enemies.length===0 || enemies[enemies.length-1].x < canvas.width - 260){
+      spawnEnemy();
+    }
+  }
+
+  /* Player physics */
+  player.y += player.vy;
+  player.vy += 0.8;
+  if (player.y >= GROUND_Y){ player.y = GROUND_Y; player.jumping = false; }
+
+  /* Bullets */
+  for (let i=bullets.length-1;i>=0;i--){
+    const b = bullets[i];
+    b.x += b.spd;
+    if (b.x > canvas.width+40) bullets.splice(i,1);
+  }
+
+  /* Enemies */
+  for (let i=enemies.length-1;i>=0;i--){
+    const e = enemies[i];
+    e.x -= e.speed;
+    // subtle floaty sway
+    e.sway += 0.03;
+    e.dy = Math.sin(e.sway)*0.6;
+
+    // bullet collisions
+    for (let j=bullets.length-1;j>=0;j--){
+      const b = bullets[j];
+      if (rectOverlap(b, {x:e.x+20,y:e.y-10+e.dy,w:e.w-40,h:e.h-20})){
+        bullets.splice(j,1);
+        e.hp -= 1;
+        explode(b.x, b.y, 6);
+        if (e.hp<=0){
+          // begin fade out
+          e.alpha -= 0.12;
+          e.speed = 0.4;
+          if (e.alpha <= 0.02){
+            enemies.splice(i,1);
+            kills++;
+            break;
+          }
+        }
+      }
+    }
+
+    // if alive and reached the player -> game over
+    if (enemies[i] && rectOverlap(
+      {x:player.x, y:player.y, w:player.w, h:player.h},
+      {x:e.x+16, y:e.y-6+e.dy, w:e.w-32, h:e.h-12}
+    )){
+      gameOver();
+      return;
+    }
+
+    // remove off-screen behind player (shouldn’t normally happen)
+    if (e && e.x + e.w < -50) enemies.splice(i,1);
+  }
+
+  /* Particles */
+  for (let p=particles.length-1;p>=0;p--){
+    const pt = particles[p];
+    pt.x += pt.vx; pt.y += pt.vy; pt.vy += 0.08; pt.life--;
+    if (pt.life<=0) particles.splice(p,1);
+  }
+
+  /* HUD */
+  scoreEl.textContent = 'Score: ' + Math.floor(score);
+  killsEl.textContent = 'Ghosts banished: ' + kills;
+}
+
+function draw(){
   // Background
   if (bgImg.complete) ctx.drawImage(bgImg,0,0,canvas.width,canvas.height);
-  ctx.fillStyle = "rgba(0,0,0,0.4)";
-  ctx.fillRect(0,0,canvas.width,canvas.height);
-
-  // Spawn pumpkins
-  pumpkinTimer++;
-  if (pumpkinTimer > 150) {
-    pumpkins.push({ x:canvas.width, y:440, w:50, h:50, glow:0 });
-    pumpkinTimer = 0;
+  else {
+    // gradient fallback
+    const g=ctx.createLinearGradient(0,0,0,canvas.height);
+    g.addColorStop(0,'#0b0f1a'); g.addColorStop(1,'#020307');
+    ctx.fillStyle=g; ctx.fillRect(0,0,canvas.width,canvas.height);
   }
 
-  // Draw pumpkins
-  pumpkins.forEach((p,pi) => {
-    p.x -= 5;
-    p.glow += 0.1;
-
-    // Bullet collision
-    bullets.forEach((b,bi) => {
-      if (rectsOverlap(b,p)) {
-        pumpkins.splice(pi,1);
-        bullets.splice(bi,1);
-        spawnParticles(p.x + p.w/2, p.y + p.h/2);
-      }
-    });
-
-    // Player collision
-    if (checkPumpkinCollision(player,p)) {
-      ghost.chasing = true;
-      ghost.speed = 2.5;
-      ghost.chaseTimer = 180;
-    }
-
-    ctx.save();
-    ctx.shadowColor = "orange";
-    ctx.shadowBlur = 15 + 5*Math.sin(p.glow);
-    ctx.drawImage(pumpkinImg,p.x,p.y,p.w,p.h);
-    ctx.restore();
-  });
-  pumpkins = pumpkins.filter(p => p.x + p.w > 0);
+  // dark tint
+  ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(0,0,canvas.width,canvas.height);
 
   // Bullets
-  bullets.forEach(b => {
-    b.x += b.speed;
-    ctx.fillStyle = "yellow";
-    ctx.fillRect(b.x,b.y,b.w,b.h);
-  });
-  bullets = bullets.filter(b => b.x < canvas.width);
+  ctx.fillStyle = 'rgba(255,230,140,1)';
+  for (const b of bullets) ctx.fillRect(b.x,b.y,b.w,b.h);
 
-  // Particles
-  particles.forEach((pt, i) => {
-    pt.x += pt.vx;
-    pt.y += pt.vy;
-    pt.vy += 0.1;
-    pt.life--;
-    ctx.fillStyle = "orange";
-    ctx.fillRect(pt.x, pt.y, 3, 3);
-    if (pt.life <= 0) particles.splice(i,1);
-  });
+  // Player
+  if (playerImg.complete) ctx.drawImage(playerImg, player.x, player.y, player.w, player.h);
+  else { ctx.fillStyle='#fff'; ctx.fillRect(player.x,player.y,player.w,player.h); }
 
-  // Player physics
-  player.y += player.vy;
-  player.vy += gravity;
-  if (player.y >= 400) { player.y = 400; player.jumping = false; }
-
-  // Ghost AI
-  if (ghost.chasing) {
-    ghost.x += ghost.speed;
-    ghost.chaseTimer--;
-    if (ghost.chaseTimer <= 0) {
-      ghost.chasing = false;
-      ghost.speed = ghost.baseSpeed;
-    }
-  } else {
-    if (ghost.x < player.x - ghost.minDistance) {
-      ghost.x += ghost.baseSpeed; // creep in slowly
-    } else if (ghost.x > player.x - ghost.minDistance) {
-      ghost.x -= ghost.baseSpeed; // back off if too close
-    }
-  }
-
-  // Collision with ghost
-  let ghostHitbox = {
-    x: ghost.x + 20,
-    y: ghost.y + 10,
-    w: ghost.w - 40,
-    h: ghost.h - 20
-  };
-  if (rectsOverlap(player, ghostHitbox)) gameOver = true;
-
-  // Draw ghost
-  ctx.drawImage(ghostImg, ghost.x, ghost.y, ghost.w, ghost.h);
-
-  // Draw player
-  ctx.drawImage(playerImg, player.x, player.y, player.w, player.h);
-
-  // Fog layer
-  if (fogImg.complete) {
-    let pattern = ctx.createPattern(fogImg, "repeat");
+  // Enemies
+  for (const e of enemies){
     ctx.save();
-    ctx.globalAlpha = 0.3;
-    ctx.translate(-Date.now()*0.05 % fogImg.width, 0);
-    ctx.fillStyle = pattern;
-    ctx.fillRect(0,0,canvas.width+fogImg.width,canvas.height);
+    ctx.globalAlpha = Math.max(0, e.alpha);
+    if (enemyImg.complete) ctx.drawImage(enemyImg, e.x, e.y + e.dy, e.w, e.h);
+    else { ctx.fillStyle='#9cf'; ctx.fillRect(e.x, e.y + e.dy, e.w, e.h); }
+    // subtle outer glow
+    ctx.shadowColor = 'rgba(150,200,255,0.35)';
+    ctx.shadowBlur = 12;
     ctx.restore();
   }
 
-  // Score
-  ctx.fillStyle = "white";
-  ctx.font = "20px Arial";
-  ctx.fillText("Score: " + score, 20, 30);
-
-  if (!gameOver) requestAnimationFrame(loop);
-  else {
-    ctx.fillStyle="white";
-    ctx.font="40px Arial";
-    ctx.fillText("GAME OVER", canvas.width/2 - 120, canvas.height/2);
-    ctx.font="20px Arial";
-    ctx.fillText("Press Enter or Click to Restart", canvas.width/2 - 160, canvas.height/2 + 40);
+  // Fog (procedural puffs drifting left)
+  ctx.save();
+  for (const f of fogPuffs){
+    f.x += f.dx;
+    if (f.x < -f.r) { f.x = canvas.width + f.r; f.y = Math.random()*canvas.height; }
+    const radial = ctx.createRadialGradient(f.x, f.y, f.r*0.2, f.x, f.y, f.r);
+    radial.addColorStop(0, `rgba(255,255,255,${f.alpha})`);
+    radial.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = radial;
+    ctx.beginPath();
+    ctx.arc(f.x, f.y, f.r, 0, Math.PI*2);
+    ctx.fill();
   }
+  ctx.restore();
+
+  // Foreground vignette
+  const vg = ctx.createRadialGradient(canvas.width*0.5, canvas.height*0.45, canvas.height*0.2, canvas.width*0.5, canvas.height*0.45, canvas.height*0.8);
+  vg.addColorStop(0,'rgba(0,0,0,0)');
+  vg.addColorStop(1,'rgba(0,0,0,0.55)');
+  ctx.fillStyle = vg; ctx.fillRect(0,0,canvas.width,canvas.height);
 }
 
-// Collision helpers
-function checkPumpkinCollision(player,p) {
-  return rectsOverlap(player, p) && player.y + player.h > p.y + 20;
-}
-function rectsOverlap(a,b) {
-  return a.x < b.x + b.w &&
-         a.x + a.w > b.x &&
-         a.y < b.y + b.h &&
-         a.y + a.h > b.y;
+function loop(){
+  if (!running) return;
+  update();
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  draw();
+  requestAnimationFrame(loop);
 }
 
-function restartGame() {
-  pumpkins = [];
+/* ====== Game Over / Restart ====== */
+function gameOver(){
+  running = false;
+  finalScoreEl.textContent = 'Score: ' + Math.floor(score) + '  •  Banished: ' + kills;
+  overlay.style.visibility = 'visible';
+  try { bgm.pause(); } catch(e){}
+}
+function restart(){
+  // reset everything
+  enemies = [];
   bullets = [];
   particles = [];
-  pumpkinTimer = 0;
-  ghost.x = -300;
-  ghost.speed = ghost.baseSpeed;
-  ghost.chasing = false;
-  ghost.chaseTimer = 0;
-  score = 0;
-  gameOver = false;
+  fogPuffs.forEach(f=>{ f.x = Math.random()*canvas.width; f.y = Math.random()*canvas.height; });
+  spawnTimer = 0; score = 0; kills = 0;
+  player.x = 100; player.y = GROUND_Y; player.vy = 0; player.jumping = false;
+  running = true;
+  overlay.style.visibility = 'hidden';
+  tryStartMusic();
   loop();
 }
+restartBtn.addEventListener('click', restart);
 
-// Start game
-fogImg.onload = () => loop();
+/* ====== Start ====== */
+initFog();
+tryStartMusic(); // harmless if blocked; will retry on input
+loop();
 </script>
 </body>
 </html>
