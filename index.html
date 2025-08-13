@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Haunted Runner with Shooting</title>
+<title>Haunted Runner Fixed</title>
 <style>
   body { margin:0; background:black; overflow:hidden; }
   canvas { display:block; margin:auto; background:black; }
@@ -24,20 +24,21 @@ const playerImg = new Image(); playerImg.src = "https://i.postimg.cc/jdn1KZYb/Sc
 const ghostImg  = new Image(); ghostImg.src  = "https://i.postimg.cc/vDwc43PK/Screenshot-2025-0812-174643-removebg-preview.png";
 const bgImg     = new Image(); bgImg.src     = "https://i.postimg.cc/L5tmbRTy/Screenshot-2025-0812-173844.png";
 const pumpkinImg= new Image(); pumpkinImg.src= "https://i.postimg.cc/FK6CkBSG/Screenshot-2025-0812-180233-removebg-preview.png";
-const fogImg    = new Image(); fogImg.src    = "https://www.transparenttextures.com/patterns/foggy-birds.png";
+const fogImg    = new Image(); fogImg.crossOrigin = "anonymous";
+fogImg.src      = "https://i.ibb.co/dKnmp53/fog-texture.png"; // Large seamless fog texture
 
 // Player
 let player = { x:100, y:400, w:80, h:100, vy:0, jumping:false };
 const gravity = 0.8;
 
 // Ghost
-let ghost = { x:-200, y:400, w:120, h:140, speed:0, chasing:false, chaseTimer:0, startDelay:120 };
+let ghost = { x:-300, y:400, w:120, h:140, speed:0.3, chasing:false, chaseTimer:0, minDistance:150 };
 
 // Pumpkins & Bullets
 let pumpkins = [];
 let bullets = [];
-let pumpkinTimer = 0;
 let particles = [];
+let pumpkinTimer = 0;
 
 // Score
 let score = 0;
@@ -48,8 +49,9 @@ const bgMusic = document.getElementById("bgMusic");
 let musicStarted = false;
 function startMusic() {
   if (!musicStarted) {
-    musicStarted = true;
-    bgMusic.play().catch(e=>console.log("Music blocked:",e));
+    bgMusic.play()
+      .then(() => { musicStarted = true; })
+      .catch(() => { /* retry later */ });
   }
 }
 
@@ -89,7 +91,6 @@ function spawnParticles(x,y) {
   }
 }
 
-// Main loop
 function loop() {
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
@@ -122,7 +123,7 @@ function loop() {
     // Player collision
     if (checkPumpkinCollision(player,p)) {
       ghost.chasing = true;
-      ghost.speed = 3;
+      ghost.speed = 2.5;
       ghost.chaseTimer = 180;
     }
 
@@ -159,18 +160,16 @@ function loop() {
   if (player.y >= 400) { player.y = 400; player.jumping = false; }
 
   // Ghost movement
-  if (ghost.startDelay > 0) {
-    ghost.startDelay--;
+  if (!ghost.chasing) {
+    ghost.speed = 0.3;
+    if (ghost.x < player.x - ghost.minDistance) {
+      ghost.x += ghost.speed;
+    }
   } else {
-    if (!ghost.chasing) ghost.speed = 0.3;
     ghost.x += ghost.speed;
-  }
-
-  if (ghost.chasing) {
     ghost.chaseTimer--;
     if (ghost.chaseTimer <= 0) {
       ghost.chasing = false;
-      ghost.speed = 0.3;
     }
   }
 
@@ -189,12 +188,12 @@ function loop() {
   // Draw player
   ctx.drawImage(playerImg, player.x, player.y, player.w, player.h);
 
-  // Fog
+  // Fog layer
   if (fogImg.complete) {
     let pattern = ctx.createPattern(fogImg, "repeat");
     ctx.save();
-    ctx.globalAlpha = 0.25;
-    ctx.translate(-Date.now()*0.03 % fogImg.width,0);
+    ctx.globalAlpha = 0.3;
+    ctx.translate(-Date.now()*0.05 % fogImg.width, 0);
     ctx.fillStyle = pattern;
     ctx.fillRect(0,0,canvas.width+fogImg.width,canvas.height);
     ctx.restore();
@@ -231,16 +230,16 @@ function restartGame() {
   bullets = [];
   particles = [];
   pumpkinTimer = 0;
-  ghost.x = -200;
-  ghost.speed = 0;
-  ghost.startDelay = 120;
+  ghost.x = -300;
+  ghost.speed = 0.3;
   ghost.chasing = false;
+  ghost.chaseTimer = 0;
   score = 0;
   gameOver = false;
   loop();
 }
 
-// Start after assets load
+// Start game when fog is ready
 fogImg.onload = () => loop();
 </script>
 </body>
