@@ -1,332 +1,192 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<meta charset="UTF-8">
 <title>Haunted Runner</title>
 <style>
-  :root { --ui:#fff; }
-  html,body{margin:0;background:#000;overflow:hidden;font-family:system-ui,Arial;}
-  canvas{display:block;margin:auto;background:#000}
-  .hud{
-    position:fixed;left:16px;top:12px;color:var(--ui);font-weight:700;
-    text-shadow:0 2px 8px rgba(0,0,0,.8);z-index:10
-  }
-  .hud .row{display:flex;gap:16px;align-items:center}
-  .btn{
-    appearance:none;border:0;border-radius:12px;
-    background:rgba(255,255,255,.1);color:#fff;padding:8px 12px;
-    cursor:pointer;font-weight:700;backdrop-filter:blur(6px)
-  }
-  .centerTip{
-    position:fixed;left:50%;transform:translateX(-50%);
-    bottom:14px;color:#fff;opacity:.9;text-shadow:0 2px 8px #000;z-index:10
-  }
-  .overlay{
-    position:fixed;inset:0;display:none;align-items:center;justify-content:center;
-    background:rgba(0,0,0,.55);color:#fff;flex-direction:column;gap:10px;z-index:20
-  }
+  body { margin:0; background:black; overflow:hidden; }
+  canvas { display:block; margin:auto; background:black; }
 </style>
 </head>
 <body>
-<div class="hud">
-  <div class="row">
-    <div id="score">Score: 0</div>
-    <button id="audioBtn" class="btn">🔇 Music</button>
-  </div>
-</div>
-<div class="centerTip">Tap / Click / Space to jump</div>
-<div id="gameOver" class="overlay">
-  <div style="font-size:36px;font-weight:900">GAME OVER</div>
-  <div id="finalScore" style="font-size:18px">Score: 0</div>
-  <button id="restartBtn" class="btn">Restart</button>
-</div>
-
 <canvas id="game" width="1100" height="520"></canvas>
 
-<!-- Haunted ambience (royalty-free, Pixabay). Will start on first interaction. -->
-<audio id="bgm" preload="auto" loop crossorigin="anonymous">
-  <!-- Haunted ambience -->
-  <source src="https://cdn.pixabay.com/download/audio/2022/10/31/audio_84c0f3f9a3.mp3?filename=haunted-ambience-125648.mp3" type="audio/mpeg">
-  <!-- Fallback ambience (different file) -->
-  <source src="https://cdn.pixabay.com/download/audio/2021/10/26/audio_6d3db0b8f8.mp3?filename=dark-ambient-9822.mp3" type="audio/mpeg">
+<audio id="bgMusic" loop preload="auto">
+  <source src="https://cdn.pixabay.com/download/audio/2021/10/26/audio_9b2db5a5de.mp3?filename=haunted-house-ambience-1-minute-110057.mp3" type="audio/mpeg">
 </audio>
 
 <script>
-/* ---------------- CONFIG / ASSETS ---------------- */
-const CANVAS_W = 1100, CANVAS_H = 520;
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
 
-const IMAGES = {
-  player: 'https://i.postimg.cc/jdn1KZYb/Screenshot-20250812-001657-removebg-preview.png',
-  ghost:  'https://i.postimg.cc/vDwc43PK/Screenshot-2025-0812-174643-removebg-preview.png',
-  bg:     'https://i.postimg.cc/L5tmbRTy/Screenshot-2025-0812-173844.png',
-  pump:   'https://i.postimg.cc/FK6CkBSG/Screenshot-2025-0812-180233-removebg-preview.png'
-};
+// Images
+const playerImg = new Image(); playerImg.src = "https://i.postimg.cc/jdn1KZYb/Screenshot-20250812-001657-removebg-preview.png";
+const ghostImg  = new Image(); ghostImg.src  = "https://i.postimg.cc/vDwc43PK/Screenshot-2025-0812-174643-removebg-preview.png";
+const bgImg     = new Image(); bgImg.src     = "https://i.postimg.cc/L5tmbRTy/Screenshot-2025-0812-173844.png";
+const pumpkinImg= new Image(); pumpkinImg.src= "https://i.postimg.cc/FK6CkBSG/Screenshot-2025-0812-180233-removebg-preview.png";
+const fogCanvas = document.createElement("canvas");
+fogCanvas.width = canvas.width;
+fogCanvas.height = canvas.height;
+const fogCtx = fogCanvas.getContext("2d");
 
-const GROUND_Y = CANVAS_H - 20; // for fog bound & visual ref
+// Fog pattern
+const fogImg = new Image();
+fogImg.src = "https://www.transparenttextures.com/patterns/foggy-birds.png";
 
-/* ---------------- SETUP ---------------- */
-const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
-canvas.width = CANVAS_W; canvas.height = CANVAS_H;
+let fogX = 0;
 
-const scoreEl = document.getElementById('score');
-const gameOverEl = document.getElementById('gameOver');
-const finalScoreEl = document.getElementById('finalScore');
-const restartBtn = document.getElementById('restartBtn');
-const audioBtn = document.getElementById('audioBtn');
-const bgm = document.getElementById('bgm');
+// Player
+let player = { x:100, y:400, w:80, h:100, vy:0, jumping:false };
+const gravity = 0.8;
 
-let musicReady = false;
-let musicWanted = false;
+// Ghost
+let ghost = { x:50, y:400, w:80, h:100, speed:0.5, chasing:false, chaseTimer:0 };
 
-function startMusicFromGesture(){
-  if (!musicReady && musicWanted){
-    bgm.play().then(()=>{ musicReady = true; audioBtn.textContent = '🔊 Music'; })
-      .catch(()=>{ /* keep button as muted */ });
-  }
-}
-
-audioBtn.addEventListener('click', ()=>{
-  if (!musicWanted){
-    musicWanted = true; startMusicFromGesture();
-  } else {
-    if (bgm.paused){
-      bgm.play().then(()=>{ audioBtn.textContent = '🔊 Music'; });
-    } else {
-      bgm.pause(); audioBtn.textContent = '🔇 Music';
-    }
-  }
-});
-
-/* allow any of these to enable music */
-['click','touchstart','keydown'].forEach(ev=>{
-  window.addEventListener(ev, ()=>{
-    if (!musicWanted){ musicWanted = true; }
-    startMusicFromGesture();
-  }, {passive:true, once:false});
-});
-
-/* ---------------- LOAD IMAGES ---------------- */
-function loadImg(src){ const i=new Image(); i.crossOrigin="anonymous"; i.src=src; return i; }
-const imgPlayer = loadImg(IMAGES.player);
-const imgGhost  = loadImg(IMAGES.ghost);
-const imgBG     = loadImg(IMAGES.bg);
-const imgPump   = loadImg(IMAGES.pump);
-
-/* ---------------- GAME STATE ---------------- */
-const player = { x:120, y:CANVAS_H-140, w:100, h:100, vy:0, onGround:false };
-const ghost  = { x:-220, y:CANVAS_H-140, w:110, h:110, vx:0.12, chaseV:3.2, chasing:0 }; // chasing: frames left
+// Pumpkins
 let pumpkins = [];
-let fogs = [];
+let pumpkinTimer = 0;
+
+// Score
 let score = 0;
-let running = true;
-let frame = 0;
+let gameOver = false;
 
-/* Physics */
-const GRAV = 0.9;
-const JUMP_V = -16;
-
-/* ---------------- INPUT ---------------- */
-let wantJump=false;
-function triggerJump(){
-  if (player.onGround){
-    player.vy = JUMP_V;
-    player.onGround = false;
+// Music
+const bgMusic = document.getElementById("bgMusic");
+let musicStarted = false;
+function startMusic() {
+  if (!musicStarted) {
+    musicStarted = true;
+    bgMusic.play().catch(e=>console.log("Music blocked:",e));
   }
 }
-window.addEventListener('keydown', e=>{
-  if (e.code==='Space' || e.code==='ArrowUp'){ wantJump = true; triggerJump(); }
-  if (!running && e.code==='Enter') restart();
+
+// Input
+document.addEventListener("keydown", e => {
+  startMusic();
+  if ((e.code === "Space" || e.code === "ArrowUp") && !player.jumping && !gameOver) {
+    player.vy = -15;
+    player.jumping = true;
+  }
+  if (e.code === "Enter" && gameOver) restartGame();
 });
-canvas.addEventListener('mousedown', ()=>{ wantJump=true; triggerJump(); });
-canvas.addEventListener('touchstart', ()=>{ wantJump=true; triggerJump(); }, {passive:true});
-window.addEventListener('keyup', e=>{
-  if (e.code==='Space' || e.code==='ArrowUp'){ wantJump = false; }
+canvas.addEventListener("click", () => {
+  startMusic();
+  if (!player.jumping && !gameOver) {
+    player.vy = -15;
+    player.jumping = true;
+  }
+  if (gameOver) restartGame();
 });
-canvas.addEventListener('mouseup', ()=>{ wantJump=false; });
-canvas.addEventListener('touchend', ()=>{ wantJump=false; }, {passive:true});
 
-/* ---------------- HELPERS ---------------- */
-function AABB(a,b){
-  return a.x < b.x + b.w && a.x + a.w > b.x &&
-         a.y < b.y + b.h && a.y + a.h > b.y;
-}
-/* pumpkin contact only counts if player's feet are low enough (not while airborne) */
-function pumpkinHit(player, pum){
-  const horizontal = player.x < pum.x + pum.w && player.x + player.w > pum.x;
-  const feet = player.y + player.h;
-  return horizontal && feet > pum.y + 18 && feet < pum.y + pum.h + 14;
-}
+// Game loop
+function loop() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
 
-/* ---------------- FOG ---------------- */
-function initFog(){
-  fogs.length = 0;
-  for(let i=0;i<18;i++){
-    fogs.push({
-      x: Math.random()*CANVAS_W,
-      y: 60 + Math.random()*(CANVAS_H-120),
-      r: 80 + Math.random()*160,
-      a: 0.10 + Math.random()*0.15,
-      vx: -0.25 - Math.random()*0.5,
-      wobble: Math.random()*Math.PI*2,
-      wobbleSpd: 0.005 + Math.random()*0.01
-    });
-  }
-}
-initFog();
+  // Draw background
+  if (bgImg.complete) ctx.drawImage(bgImg,0,0,canvas.width,canvas.height);
 
-/* ---------------- GAME LOOP ---------------- */
-function spawnPumpkins(){
-  // space them far apart
-  if (frame % 150 === 0){
-    const size = 64;
-    pumpkins.push({ x: CANVAS_W + 20, y: CANVAS_H - size - 4, w:size, h:size, glow: Math.random()*Math.PI*2 });
-  }
-}
+  // Dark overlay for spooky feel
+  ctx.fillStyle = "rgba(0,0,0,0.4)";
+  ctx.fillRect(0,0,canvas.width,canvas.height);
 
-function update(){
-  if (!running) return;
-
-  // score over time
-  if (frame % 2 === 0) score++;
-
-  // player physics
-  player.vy += GRAV;
-  player.y += player.vy;
-  if (player.y >= CANVAS_H - player.h - 4){
-    player.y = CANVAS_H - player.h - 4;
-    player.vy = 0;
-    player.onGround = true;
+  // Pumpkins spawn
+  pumpkinTimer++;
+  if (pumpkinTimer > 150) {
+    pumpkins.push({ x:canvas.width, y:440, w:50, h:50, glow:0 });
+    pumpkinTimer = 0;
   }
 
-  // pumpkins move
-  pumpkins.forEach(p=>{ p.x -= 5.2; p.glow += 0.06; });
-  pumpkins = pumpkins.filter(p=> p.x + p.w > -20);
-
-  // ghost AI
-  if (ghost.chasing > 0){
-    ghost.chasing--;
-    ghost.x += ghost.chaseV;
-    if (ghost.chasing===0){
-      // slow back down, linger a bit behind player
-      if (ghost.x > player.x - 260) ghost.x = player.x - 260;
-    }
-  } else {
-    // idle creep
-    ghost.x += ghost.vx;
-    // keep it well behind
-    if (ghost.x > player.x - 320) ghost.x = player.x - 320;
-  }
-
-  // trigger chase only when truly touching a pumpkin
-  for (const p of pumpkins){
-    if (pumpkinHit(player, p)){
-      ghost.chasing = 180; // ~3s at 60fps
-      // small nudge back so it sprints in
-      if (ghost.x > player.x - 300) ghost.x = player.x - 300;
-      break;
-    }
-  }
-
-  // collision with ghost = game over (give small tolerance)
-  if (ghost.x + ghost.w > player.x + 10){
-    endGame();
-  }
-
-  // fog drift
-  fogs.forEach(f=>{
-    f.x += f.vx;
-    f.wobble += f.wobbleSpd;
-    f.y += Math.sin(f.wobble)*0.15;
-    if (f.x < -f.r*2){ f.x = CANVAS_W + f.r*2; f.y = 60 + Math.random()*(CANVAS_H-120); }
-  });
-
-  frame++;
-  scoreEl.textContent = 'Score: ' + score;
-}
-
-function draw(){
-  // background
-  if (imgBG.complete) ctx.drawImage(imgBG,0,0,CANVAS_W,CANVAS_H);
-  else { ctx.fillStyle='#070707'; ctx.fillRect(0,0,CANVAS_W,CANVAS_H); }
-
-  // subtle dark overlay for mood
-  ctx.fillStyle = 'rgba(0,0,0,0.35)';
-  ctx.fillRect(0,0,CANVAS_W,CANVAS_H);
-
-  // pumpkins (glow)
-  pumpkins.forEach(p=>{
-    if (imgPump.complete){
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.shadowColor = 'rgba(255,140,0,0.85)';
-      ctx.shadowBlur = 18 + 10*Math.sin(p.glow);
-      ctx.drawImage(imgPump, p.x, p.y, p.w, p.h);
-      ctx.restore();
-    } else {
-      ctx.fillStyle = '#f90';
-      ctx.fillRect(p.x,p.y,p.w,p.h);
-    }
-  });
-
-  // player
-  if (imgPlayer.complete) ctx.drawImage(imgPlayer, player.x, player.y, player.w, player.h);
-
-  // ghost
-  if (imgGhost.complete){
+  // Pumpkins draw
+  pumpkins.forEach(p => {
+    p.x -= 5;
+    p.glow += 0.1;
     ctx.save();
-    // fade slightly when not chasing
-    const alpha = ghost.chasing>0 ? 1 : 0.85;
-    ctx.globalAlpha = alpha;
-    ctx.drawImage(imgGhost, ghost.x, ghost.y, ghost.w, ghost.h);
+    ctx.shadowColor = "orange";
+    ctx.shadowBlur = 15 + 5*Math.sin(p.glow);
+    ctx.drawImage(pumpkinImg,p.x,p.y,p.w,p.h);
     ctx.restore();
+
+    // Pumpkin collision
+    if (checkPumpkinCollision(player,p)) {
+      ghost.chasing = true;
+      ghost.speed = 3;
+      ghost.chaseTimer = 180;
+    }
+  });
+  pumpkins = pumpkins.filter(p => p.x + p.w > 0);
+
+  // Player physics
+  player.y += player.vy;
+  player.vy += gravity;
+  if (player.y >= 400) { player.y = 400; player.jumping = false; }
+
+  // Ghost movement
+  ghost.x += ghost.speed;
+  if (ghost.chasing) {
+    ghost.chaseTimer--;
+    if (ghost.chaseTimer <= 0) {
+      ghost.chasing = false;
+      ghost.speed = 0.5;
+    }
   }
 
-  // fog (in front)
-  ctx.save();
-  ctx.globalCompositeOperation = 'screen';
-  fogs.forEach(f=>{
-    const grad = ctx.createRadialGradient(f.x, f.y, f.r*0.1, f.x, f.y, f.r);
-    grad.addColorStop(0, `rgba(200,200,220,${f.a})`);
-    grad.addColorStop(1, 'rgba(200,200,220,0)');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(f.x, f.y, f.r, 0, Math.PI*2);
-    ctx.fill();
-  });
-  ctx.restore();
+  // Ghost catch check
+  if (ghost.x + ghost.w >= player.x + 20) gameOver = true;
+
+  // Draw ghost
+  ctx.drawImage(ghostImg, ghost.x, ghost.y, ghost.w, ghost.h);
+
+  // Draw player
+  ctx.drawImage(playerImg, player.x, player.y, player.w, player.h);
+
+  // Fog
+  if (fogImg.complete) {
+    fogX -= 0.3;
+    fogCtx.clearRect(0,0,fogCanvas.width,fogCanvas.height);
+    const pattern = fogCtx.createPattern(fogImg,"repeat");
+    fogCtx.fillStyle = pattern;
+    fogCtx.translate(fogX,0);
+    fogCtx.fillRect(-fogCanvas.width,0,fogCanvas.width*3,fogCanvas.height);
+    fogCtx.setTransform(1,0,0,1,0,0);
+    ctx.globalAlpha = 0.15;
+    ctx.drawImage(fogCanvas,0,0);
+    ctx.globalAlpha = 1;
+  }
+
+  // Score
+  ctx.fillStyle = "white";
+  ctx.font = "20px Arial";
+  ctx.fillText("Score: " + score, 20, 30);
+
+  if (!gameOver) requestAnimationFrame(loop);
+  else {
+    ctx.fillStyle="white";
+    ctx.font="40px Arial";
+    ctx.fillText("GAME OVER", canvas.width/2 - 120, canvas.height/2);
+    ctx.font="20px Arial";
+    ctx.fillText("Press Enter or Click to Restart", canvas.width/2 - 160, canvas.height/2 + 40);
+  }
 }
 
-function loop(){
-  update();
-  ctx.clearRect(0,0,CANVAS_W,CANVAS_H);
-  draw();
-  if (running) requestAnimationFrame(loop);
+function checkPumpkinCollision(player,p) {
+  return player.x < p.x + p.w &&
+         player.x + player.w > p.x &&
+         player.y + player.h > p.y + 10 && // Must be low enough to hit
+         player.y < p.y + p.h;
 }
 
-/* ---------------- SPAWN & CONTROL ---------------- */
-function endGame(){
-  running = false;
-  gameOverEl.style.display = 'flex';
-  finalScoreEl.textContent = 'Score: ' + score;
-}
-function restart(){
+function restartGame() {
   pumpkins = [];
-  score = 0; frame = 0;
-  player.y = CANVAS_H- player.h - 4; player.vy = 0; player.onGround = true;
-  ghost.x = -220; ghost.chasing = 0;
-  running = true;
-  gameOverEl.style.display = 'none';
-  initFog();
-  requestAnimationFrame(loop);
+  pumpkinTimer = 0;
+  ghost.x = 50;
+  ghost.speed = 0.5;
+  ghost.chasing = false;
+  score = 0;
+  gameOver = false;
+  loop();
 }
 
-/* spawn loop (simple timer using requestAnimationFrame frames) */
-setInterval(spawnPumpkins, 1000); // further spacing safety
-
-/* kick off */
-requestAnimationFrame(loop);
+loop();
 </script>
 </body>
 </html>
