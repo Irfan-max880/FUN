@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1.0" />
-  <title>Spooky Runner</title>
+  <title>Haunted Runner</title>
   <style>
     body { margin:0; overflow:hidden; background:#000; }
     canvas { display:block; margin:auto; }
@@ -18,14 +18,12 @@
 </audio>
 
 <script>
-/* ---------- CONFIG ---------- */
 const PLAYER_IMG_SRC = 'https://i.postimg.cc/jdn1KZYb/Screenshot-20250812-001657-removebg-preview.png';
 const GHOST_IMG_SRC = 'https://i.postimg.cc/vDwc43PK/Screenshot-2025-0812-174643-removebg-preview.png';
 const BG_IMG_SRC = 'https://i.postimg.cc/L5tmbRTy/Screenshot-2025-0812-173844.png';
 const PUMPKIN_IMG_SRC = 'https://i.postimg.cc/FK6CkBSG/Screenshot-2025-0812-180233-removebg-preview.png';
-const CANVAS_W = 1100, CANVAS_H = 520;
+const CANVAS_W=1100, CANVAS_H=520;
 
-/* ---------- SETUP ---------- */
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
@@ -37,23 +35,19 @@ const pumpkinImg = new Image(); pumpkinImg.src = PUMPKIN_IMG_SRC;
 let player = { x:100, y:CANVAS_H - 150, w:100, h:100, vy:0, jump:false };
 let gravity = 0.8;
 let score = 0, gameOver = false;
-let pumpkins = [];
-let coins = [];
+let pumpkins = [], coins = [];
 let ghost = { x:-200, y:CANVAS_H - 150, w:100, h:100, speed:0.2 };
-let chaseTimer = 0;
-let pumpkinTimer = 0;
+let chaseTimer = 0, pumpkinTimer = 0;
 let musicStarted = false;
 
-/* ---------- MUSIC ---------- */
 const bgMusic = document.getElementById('bgMusic');
 function startMusic() {
   if (!musicStarted) {
     musicStarted = true;
-    bgMusic.play().catch(err => console.log('Music play blocked:', err));
+    bgMusic.play().catch(err => console.log('Music error:', err));
   }
 }
 
-/* ---------- INPUT ---------- */
 document.addEventListener('keydown', e => {
   startMusic();
   if ((e.code=='Space'||e.code=='ArrowUp') && !player.jump && !gameOver) {
@@ -69,11 +63,8 @@ canvas.addEventListener('click', () => {
   if (gameOver) restartGame();
 });
 
-/* ---------- GAME LOOP ---------- */
 function gameLoop() {
   ctx.clearRect(0,0,CANVAS_W,CANVAS_H);
-
-  // Background
   if (bgImg.complete) ctx.drawImage(bgImg,0,0,CANVAS_W,CANVAS_H);
   else { ctx.fillStyle='#111'; ctx.fillRect(0,0,CANVAS_W,CANVAS_H); }
 
@@ -82,41 +73,43 @@ function gameLoop() {
   ghost.x += ghost.speed;
   if (chaseTimer > 0) {
     chaseTimer--;
-    if (chaseTimer === 0) ghost.speed = 0.2; // back to slow
+    if (chaseTimer===0) ghost.speed = 0.2;
   }
   if (ghost.x + ghost.w >= player.x + 20) gameOver = true;
 
   // Player
-  if (playerImg.complete) ctx.drawImage(playerImg, player.x, player.y, player.w, player.h);
+  if (playerImg.complete) ctx.drawImage(playerImg,player.x,player.y,player.w,player.h);
   player.y += player.vy; player.vy += gravity;
-  if (player.y >= CANVAS_H - player.h) {
-    player.y = CANVAS_H - player.h; player.jump = false;
-  }
+  if (player.y >= CANVAS_H - player.h) { player.y = CANVAS_H - player.h; player.jump = false; }
 
-  // Pumpkins
+  // Pumpkins with glow
   pumpkinTimer++;
-  if (pumpkinTimer > 120) { // spaced out
-    let size = 60;
-    pumpkins.push({ x:CANVAS_W, y:CANVAS_H - size, w:size, h:size });
+  if (pumpkinTimer > 120) {
+    pumpkins.push({ x:CANVAS_W, y:CANVAS_H - 60, w:60, h:60, glow: 0 });
     pumpkinTimer = 0;
   }
   pumpkins.forEach(o => {
     o.x -= 6;
-    if (pumpkinImg.complete) ctx.drawImage(pumpkinImg, o.x, o.y, o.w, o.h);
+    o.glow = (o.glow + 0.05) % (2 * Math.PI);
+    if (pumpkinImg.complete) {
+      ctx.save();
+      ctx.shadowColor = 'orange';
+      ctx.shadowBlur = 20 + 10 * Math.sin(o.glow);
+      ctx.drawImage(pumpkinImg, o.x, o.y, o.w, o.h);
+      ctx.restore();
+    }
     if (pumpkinCollision(player, o)) {
-      chaseTimer = 180; // 3 seconds
-      ghost.speed = 4;  // speed burst
+      chaseTimer = 180; ghost.speed = 4;
     }
   });
   pumpkins = pumpkins.filter(o => o.x + o.w > 0);
 
   // Coins
   if (Math.random() < 0.01) coins.push({ x:CANVAS_W, y:CANVAS_H - 100, w:30, h:30 });
-  ctx.fillStyle='yellow';
+  ctx.fillStyle = 'yellow';
   coins.forEach(c => {
     c.x -= 6;
-    ctx.beginPath(); ctx.arc(c.x+15, c.y+15, 15, 0, Math.PI*2);
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(c.x+15, c.y+15,15,0,Math.PI*2); ctx.fill();
     if (collision(player, c)) { score++; c.collected = true; }
   });
   coins = coins.filter(c => c.x + c.w > 0 && !c.collected);
@@ -128,27 +121,21 @@ function gameLoop() {
   if (!gameOver) requestAnimationFrame(gameLoop);
   else {
     ctx.fillStyle='white'; ctx.font='40px Arial';
-    ctx.fillText('GAME OVER', CANVAS_W/2 - 120, CANVAS_H/2);
+    ctx.fillText('GAME OVER', CANVAS_W/2-120, CANVAS_H/2);
     ctx.font='20px Arial';
-    ctx.fillText('Press Enter or Click to Restart', CANVAS_W/2 - 160, CANVAS_H/2 + 40);
+    ctx.fillText('Press Enter or Click to Restart', CANVAS_W/2-160, CANVAS_H/2+40);
   }
 }
 
-/* ---------- COLLISION ---------- */
 function collision(a, b) {
   return a.x < b.x + b.w && a.x + a.w > b.x &&
          a.y < b.y + b.h && a.y + a.h > b.y;
 }
-
-function pumpkinCollision(player, pumpkin) {
-  return (
-    player.x < pumpkin.x + pumpkin.w &&
-    player.x + player.w > pumpkin.x &&
-    player.y + player.h > pumpkin.y + 20 // only if low enough
-  );
+function pumpkinCollision(p, pu) {
+  return p.x < pu.x + pu.w && p.x + p.w > pu.x &&
+         p.y + p.h > pu.y + 20;
 }
 
-/* ---------- RESTART ---------- */
 function restartGame() {
   score = 0; pumpkins = []; coins = [];
   ghost.x = -200; ghost.speed = 0.2; chaseTimer = 0;
