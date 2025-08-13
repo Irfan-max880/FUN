@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Haunted Runner</title>
+<title>Haunted Runner with Shooting</title>
 <style>
   body { margin:0; background:black; overflow:hidden; }
   canvas { display:block; margin:auto; background:black; }
@@ -24,15 +24,7 @@ const playerImg = new Image(); playerImg.src = "https://i.postimg.cc/jdn1KZYb/Sc
 const ghostImg  = new Image(); ghostImg.src  = "https://i.postimg.cc/vDwc43PK/Screenshot-2025-0812-174643-removebg-preview.png";
 const bgImg     = new Image(); bgImg.src     = "https://i.postimg.cc/L5tmbRTy/Screenshot-2025-0812-173844.png";
 const pumpkinImg= new Image(); pumpkinImg.src= "https://i.postimg.cc/FK6CkBSG/Screenshot-2025-0812-180233-removebg-preview.png";
-const fogCanvas = document.createElement("canvas");
-fogCanvas.width = canvas.width;
-fogCanvas.height = canvas.height;
-const fogCtx = fogCanvas.getContext("2d");
-
-// Fog texture
-const fogImg = new Image();
-fogImg.src = "https://www.transparenttextures.com/patterns/foggy-birds.png";
-let fogX = 0;
+const fogImg    = new Image(); fogImg.src    = "https://www.transparenttextures.com/patterns/foggy-birds.png";
 
 // Player
 let player = { x:100, y:400, w:80, h:100, vy:0, jumping:false };
@@ -41,9 +33,11 @@ const gravity = 0.8;
 // Ghost
 let ghost = { x:-200, y:400, w:120, h:140, speed:0, chasing:false, chaseTimer:0, startDelay:120 };
 
-// Pumpkins
+// Pumpkins & Bullets
 let pumpkins = [];
+let bullets = [];
 let pumpkinTimer = 0;
+let particles = [];
 
 // Score
 let score = 0;
@@ -67,15 +61,33 @@ document.addEventListener("keydown", e => {
     player.jumping = true;
   }
   if (e.code === "Enter" && gameOver) restartGame();
+  if (e.code === "KeyF" && !gameOver) shoot();
 });
-canvas.addEventListener("click", () => {
+canvas.addEventListener("click", e => {
   startMusic();
-  if (!player.jumping && !gameOver) {
+  if (e.shiftKey) shoot();
+  else if (!player.jumping && !gameOver) {
     player.vy = -15;
     player.jumping = true;
   }
   if (gameOver) restartGame();
 });
+
+function shoot() {
+  bullets.push({ x: player.x + player.w, y: player.y + player.h/2 - 5, w:15, h:5, speed:8 });
+}
+
+// Particle effect
+function spawnParticles(x,y) {
+  for (let i=0; i<6; i++) {
+    particles.push({
+      x, y,
+      vx: (Math.random()-0.5)*4,
+      vy: (Math.random()-1)*4,
+      life: 30
+    });
+  }
+}
 
 // Main loop
 function loop() {
@@ -94,22 +106,52 @@ function loop() {
   }
 
   // Draw pumpkins
-  pumpkins.forEach(p => {
+  pumpkins.forEach((p,pi) => {
     p.x -= 5;
     p.glow += 0.1;
-    ctx.save();
-    ctx.shadowColor = "orange";
-    ctx.shadowBlur = 15 + 5*Math.sin(p.glow);
-    ctx.drawImage(pumpkinImg,p.x,p.y,p.w,p.h);
-    ctx.restore();
 
+    // Bullet collision
+    bullets.forEach((b,bi) => {
+      if (rectsOverlap(b,p)) {
+        pumpkins.splice(pi,1);
+        bullets.splice(bi,1);
+        spawnParticles(p.x + p.w/2, p.y + p.h/2);
+      }
+    });
+
+    // Player collision
     if (checkPumpkinCollision(player,p)) {
       ghost.chasing = true;
       ghost.speed = 3;
       ghost.chaseTimer = 180;
     }
+
+    ctx.save();
+    ctx.shadowColor = "orange";
+    ctx.shadowBlur = 15 + 5*Math.sin(p.glow);
+    ctx.drawImage(pumpkinImg,p.x,p.y,p.w,p.h);
+    ctx.restore();
   });
   pumpkins = pumpkins.filter(p => p.x + p.w > 0);
+
+  // Bullets
+  bullets.forEach(b => {
+    b.x += b.speed;
+    ctx.fillStyle = "yellow";
+    ctx.fillRect(b.x,b.y,b.w,b.h);
+  });
+  bullets = bullets.filter(b => b.x < canvas.width);
+
+  // Particles
+  particles.forEach((pt, i) => {
+    pt.x += pt.vx;
+    pt.y += pt.vy;
+    pt.vy += 0.1;
+    pt.life--;
+    ctx.fillStyle = "orange";
+    ctx.fillRect(pt.x, pt.y, 3, 3);
+    if (pt.life <= 0) particles.splice(i,1);
+  });
 
   // Player physics
   player.y += player.vy;
@@ -149,16 +191,13 @@ function loop() {
 
   // Fog
   if (fogImg.complete) {
-    fogX -= 0.3;
-    fogCtx.clearRect(0,0,fogCanvas.width,fogCanvas.height);
-    const pattern = fogCtx.createPattern(fogImg,"repeat");
-    fogCtx.fillStyle = pattern;
-    fogCtx.translate(fogX,0);
-    fogCtx.fillRect(-fogCanvas.width,0,fogCanvas.width*3,fogCanvas.height);
-    fogCtx.setTransform(1,0,0,1,0,0);
-    ctx.globalAlpha = 0.15;
-    ctx.drawImage(fogCanvas,0,0);
-    ctx.globalAlpha = 1;
+    let pattern = ctx.createPattern(fogImg, "repeat");
+    ctx.save();
+    ctx.globalAlpha = 0.25;
+    ctx.translate(-Date.now()*0.03 % fogImg.width,0);
+    ctx.fillStyle = pattern;
+    ctx.fillRect(0,0,canvas.width+fogImg.width,canvas.height);
+    ctx.restore();
   }
 
   // Score
@@ -180,7 +219,6 @@ function loop() {
 function checkPumpkinCollision(player,p) {
   return rectsOverlap(player, p) && player.y + player.h > p.y + 20;
 }
-
 function rectsOverlap(a,b) {
   return a.x < b.x + b.w &&
          a.x + a.w > b.x &&
@@ -190,6 +228,8 @@ function rectsOverlap(a,b) {
 
 function restartGame() {
   pumpkins = [];
+  bullets = [];
+  particles = [];
   pumpkinTimer = 0;
   ghost.x = -200;
   ghost.speed = 0;
@@ -200,7 +240,8 @@ function restartGame() {
   loop();
 }
 
-loop();
+// Start after assets load
+fogImg.onload = () => loop();
 </script>
 </body>
 </html>
