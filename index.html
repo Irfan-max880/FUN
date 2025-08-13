@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Haunted Runner Fixed</title>
+<title>Haunted Runner Final</title>
 <style>
   body { margin:0; background:black; overflow:hidden; }
   canvas { display:block; margin:auto; background:black; }
@@ -11,7 +11,7 @@
 <body>
 <canvas id="game" width="1100" height="520"></canvas>
 
-<audio id="bgMusic" loop preload="auto">
+<audio id="bgMusic" loop preload="auto" muted>
   <source src="https://cdn.pixabay.com/download/audio/2021/10/26/audio_9b2db5a5de.mp3?filename=haunted-house-ambience-1-minute-110057.mp3" type="audio/mpeg">
 </audio>
 
@@ -25,22 +25,29 @@ const ghostImg  = new Image(); ghostImg.src  = "https://i.postimg.cc/vDwc43PK/Sc
 const bgImg     = new Image(); bgImg.src     = "https://i.postimg.cc/L5tmbRTy/Screenshot-2025-0812-173844.png";
 const pumpkinImg= new Image(); pumpkinImg.src= "https://i.postimg.cc/FK6CkBSG/Screenshot-2025-0812-180233-removebg-preview.png";
 const fogImg    = new Image(); fogImg.crossOrigin = "anonymous";
-fogImg.src      = "https://i.ibb.co/dKnmp53/fog-texture.png"; // Large seamless fog texture
+fogImg.src      = "https://i.ibb.co/dKnmp53/fog-texture.png";
 
 // Player
 let player = { x:100, y:400, w:80, h:100, vy:0, jumping:false };
 const gravity = 0.8;
 
 // Ghost
-let ghost = { x:-300, y:400, w:120, h:140, speed:0.3, chasing:false, chaseTimer:0, minDistance:150 };
+let ghost = {
+  x:-300, y:400, w:120, h:140,
+  baseSpeed:0.3,
+  speed:0.3,
+  chasing:false,
+  chaseTimer:0,
+  minDistance:250
+};
 
-// Pumpkins & Bullets
+// Pumpkins, bullets, particles
 let pumpkins = [];
 let bullets = [];
 let particles = [];
 let pumpkinTimer = 0;
 
-// Score
+// Score, game state
 let score = 0;
 let gameOver = false;
 
@@ -49,9 +56,11 @@ const bgMusic = document.getElementById("bgMusic");
 let musicStarted = false;
 function startMusic() {
   if (!musicStarted) {
-    bgMusic.play()
-      .then(() => { musicStarted = true; })
-      .catch(() => { /* retry later */ });
+    bgMusic.muted = false;
+    bgMusic.volume = 0.5;
+    bgMusic.play().then(() => {
+      musicStarted = true;
+    }).catch(() => {});
   }
 }
 
@@ -79,7 +88,6 @@ function shoot() {
   bullets.push({ x: player.x + player.w, y: player.y + player.h/2 - 5, w:15, h:5, speed:8 });
 }
 
-// Particle effect
 function spawnParticles(x,y) {
   for (let i=0; i<6; i++) {
     particles.push({
@@ -159,21 +167,23 @@ function loop() {
   player.vy += gravity;
   if (player.y >= 400) { player.y = 400; player.jumping = false; }
 
-  // Ghost movement
-  if (!ghost.chasing) {
-    ghost.speed = 0.3;
-    if (ghost.x < player.x - ghost.minDistance) {
-      ghost.x += ghost.speed;
-    }
-  } else {
+  // Ghost AI
+  if (ghost.chasing) {
     ghost.x += ghost.speed;
     ghost.chaseTimer--;
     if (ghost.chaseTimer <= 0) {
       ghost.chasing = false;
+      ghost.speed = ghost.baseSpeed;
+    }
+  } else {
+    if (ghost.x < player.x - ghost.minDistance) {
+      ghost.x += ghost.baseSpeed; // creep in slowly
+    } else if (ghost.x > player.x - ghost.minDistance) {
+      ghost.x -= ghost.baseSpeed; // back off if too close
     }
   }
 
-  // Ghost collision using smaller hitbox
+  // Collision with ghost
   let ghostHitbox = {
     x: ghost.x + 20,
     y: ghost.y + 10,
@@ -231,7 +241,7 @@ function restartGame() {
   particles = [];
   pumpkinTimer = 0;
   ghost.x = -300;
-  ghost.speed = 0.3;
+  ghost.speed = ghost.baseSpeed;
   ghost.chasing = false;
   ghost.chaseTimer = 0;
   score = 0;
@@ -239,7 +249,7 @@ function restartGame() {
   loop();
 }
 
-// Start game when fog is ready
+// Start game
 fogImg.onload = () => loop();
 </script>
 </body>
